@@ -28,3 +28,65 @@ Important local context:
 - Use culturally and geographically relevant references where appropriate.
 - Keep language clear, modern, and Instagram-friendly.
 """
+
+REAL_ESTATE_PROMPT_TEMPLATE = """You are a social media marketing expert for real estate businesses.
+
+Create a 7-day social media content plan.
+
+Brand name: {brand_name}
+City/Area focus: {city_area}
+Property type: {property_type}
+Target buyer segment: {target_buyer}
+Current offer: {current_offer}
+Tone: {tone}
+
+For each day include:
+- Post idea/title
+- Caption
+- Reel/short-video idea
+- 5 relevant hashtags
+
+Keep content conversion-focused and locally relevant.
+"""
+
+BEAUTY_PROMPT_TEMPLATE = """You are a social media marketing expert for beauty salons and clinics.
+
+Create a 7-day social media content plan.
+
+Brand name: {brand_name}
+City/Area focus: {city_area}
+Business type: {business_type}
+Primary service: {primary_service}
+Target audience: {target_audience}
+Current offer: {current_offer}
+Tone: {tone}
+
+For each day include:
+- Post idea/title
+- Caption
+- Reel/short-video idea
+- 5 relevant hashtags
+
+Make the content aspirational, engaging, and booking-oriented.
+"""
+
+POLITICS_PROMPT_TEMPLATE = """You are a campaign communication strategist for political digital outreach.
+
+Create a 7-day social media communication plan.
+
+Campaign name: {campaign_name}
+Constituency/Region: {region}
+Candidate name: {candidate_name}
+Campaign objective: {campaign_objective}
+Voter segment: {voter_segment}
+Key promise/message: {key_message}
+Tone: {tone}
+
+For each day include:
+- Post theme
+- Caption copy
+- Short-video/reel concept
+- 5 relevant hashtags
+
+Keep language public-friendly, positive, and action-oriented.
+"""

@@ -1,75 +1,53 @@
-"""Streamlit app for generating gym social media content."""
+"""Multi-industry AI marketing platform entrypoint."""
 
 from __future__ import annotations
 
-import io
-from typing import Optional
+import re
 
 import streamlit as st
 from dotenv import load_dotenv
 
-from content_bank import TARGET_CONTENT
-from content_store import get_next_post, get_usage_progress, reset_target_usage
+from auth import get_user_plan, sign_in, sign_out, sign_up
+from payments import render_upgrade_page
 
-TELANGANA_LOCATIONS = [
-    "Hyderabad",
-    "Secunderabad",
-    "Gachibowli",
-    "Madhapur",
-    "Kukatpally",
-    "Kondapur",
-    "Miyapur",
-    "Nizampet",
-    "Manikonda",
-    "Jubilee Hills",
-    "Banjara Hills",
-    "Begumpet",
-    "Hitech City",
-    "Warangal",
-    "Karimnagar",
-    "Nizamabad",
-    "Khammam",
-    "Nalgonda",
-    "Siddipet",
-]
+INDUSTRIES = ["Gym", "Real Estate", "Beauty", "Political Campaign"]
 
 
-def inject_custom_css() -> None:
-    """Apply custom styles for a richer MVP UI."""
+def inject_platform_css() -> None:
+    """Apply premium app-wide styles."""
     st.markdown(
         """
         <style>
             .main {
-                background: linear-gradient(180deg, #0b1020 0%, #11192f 100%);
+                background: radial-gradient(circle at top left, #111b36 0%, #0a1022 55%, #070b17 100%);
                 color: #e7ecff;
             }
-            .hero-card {
-                border: 1px solid rgba(255,255,255,0.12);
-                border-radius: 16px;
-                padding: 1.2rem 1.4rem;
-                background: linear-gradient(135deg, rgba(99,102,241,0.20), rgba(34,197,94,0.18));
+            .platform-hero {
+                border: 1px solid rgba(255,255,255,0.14);
+                border-radius: 18px;
+                padding: 1.15rem 1.35rem;
+                background: linear-gradient(135deg, rgba(99,102,241,0.30), rgba(16,185,129,0.22));
                 margin-bottom: 1rem;
             }
-            .kpi-card {
-                border: 1px solid rgba(255,255,255,0.10);
-                border-radius: 14px;
-                padding: 0.9rem 1rem;
+            .plan-chip {
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 12px;
+                padding: 0.8rem 1rem;
+                background: rgba(255,255,255,0.05);
+                margin-bottom: 0.8rem;
+            }
+            .top-nav {
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 12px;
+                padding: 0.55rem 0.85rem;
                 background: rgba(255,255,255,0.04);
-                margin-bottom: 0.7rem;
+                margin-bottom: 0.9rem;
             }
-            .section-title {
-                font-size: 1.05rem;
-                font-weight: 700;
-                margin-bottom: 0.35rem;
-            }
-            .caption {
-                opacity: 0.85;
-                font-size: 0.95rem;
-            }
-            .stDownloadButton > button {
-                width: 100%;
-                border-radius: 10px;
-                font-weight: 600;
+            .auth-card {
+                border: 1px solid rgba(255,255,255,0.14);
+                border-radius: 16px;
+                padding: 1rem 1.1rem;
+                background: rgba(255,255,255,0.04);
             }
         </style>
         """,
@@ -77,170 +55,187 @@ def inject_custom_css() -> None:
     )
 
 
-def format_post_output(
-    gym_name: str,
-    city: str,
-    audience: str,
-    tone: str,
-    region_focus: str,
-    post: dict[str, str | int],
-) -> str:
-    """Format a single-post response as markdown text."""
-    return (
-        f"### {gym_name} | {post['target'].replace('_', ' ').title()} - Day {post['day']}\n\n"
-        f"**City:** {city}\n\n"
-        f"**Target Audience:** {audience}\n\n"
-        f"**Tone:** {tone}\n\n"
-        f"**Location Focus:** {region_focus}\n\n"
-        f"**Post Caption:**\n{post['caption']}\n\n"
-        f"**Suggested Image Idea:**\n{post['image_idea']}\n\n"
-        f"**Hashtags:**\n{post['hashtags']}\n"
-    )
+def ensure_supabase_secrets() -> None:
+    """Show setup hint when required Supabase secrets are missing."""
+    missing_keys = []
+    try:
+        secrets = st.secrets
+        if not secrets.get("SUPABASE_URL"):
+            missing_keys.append("SUPABASE_URL")
+        if not secrets.get("SUPABASE_KEY"):
+            missing_keys.append("SUPABASE_KEY")
+    except Exception:
+        missing_keys = ["SUPABASE_URL", "SUPABASE_KEY"]
+
+    if missing_keys:
+        st.error(
+            "Supabase is not configured. Add these keys in Streamlit secrets: "
+            + ", ".join(missing_keys)
+        )
+        st.code(
+            'SUPABASE_URL = "https://your-project-id.supabase.co"\n'
+            'SUPABASE_KEY = "your-anon-or-publishable-key"',
+            language="toml",
+        )
+        st.stop()
 
 
-def validate_inputs(gym_name: str, city: str, audience: str) -> Optional[str]:
-    """Validate required inputs and return message if invalid."""
-    if not gym_name.strip():
-        return "Please enter a gym name."
-    if not city.strip():
-        return "Please enter a city."
-    if not audience.strip():
-        return "Please enter a target audience."
-    return None
+def render_auth_page() -> None:
+    """Render auth UI and stop app until user signs in."""
+    if st.session_state.get("user"):
+        return
 
+    def _friendly_auth_error(exc: Exception) -> str:
+        text = str(exc)
+        if "after" in text.lower() and "seconds" in text.lower():
+            match = re.search(r"after\s+(\d+)\s+seconds", text, flags=re.IGNORECASE)
+            if match:
+                return (
+                    f"For security, please wait {match.group(1)} seconds and try again."
+                )
+            return "For security, please wait about a minute and try again."
+        if "invalid login credentials" in text.lower():
+            return "Invalid email or password."
+        if "rate limit" in text.lower():
+            return "Rate limit reached. Please wait and retry."
+        return "Authentication failed. Please try again."
 
-def main() -> None:
-    """Run the Streamlit application."""
-    load_dotenv()
-    st.set_page_config(
-        page_title="AI Social Media Generator for Gyms",
-        page_icon="🏋️",
-        layout="wide",
-    )
-    inject_custom_css()
-
+    inject_platform_css()
     st.markdown(
         """
-        <div class="hero-card">
-            <h1 style="margin:0;">AI Social Media Generator for Gyms</h1>
-            <p style="margin:0.5rem 0 0 0;">
-                Create 30 days of high-converting Instagram content tailored for
-                Hyderabad and Telangana-based gyms.
+        <div class="platform-hero">
+            <h1 style="margin:0;">AI Marketing Assistant Platform</h1>
+            <p style="margin:0.45rem 0 0 0;">
+                One login. One subscription. Multiple industries.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+    st.title("Sign in to continue")
+    login_tab, signup_tab = st.tabs(["Login", "Sign Up"])
 
-    left_col, right_col = st.columns([1.45, 1], gap="large")
+    with login_tab:
+        login_email = st.text_input("Email", key="login_email")
+        login_password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Login", use_container_width=True):
+            try:
+                sign_in(login_email, login_password)
+                st.success("Logged in successfully.")
+                st.rerun()
+            except Exception as exc:
+                st.error(_friendly_auth_error(exc))
 
-    with left_col:
-        with st.form("generator_form", border=False):
-            st.markdown('<div class="section-title">Gym Profile</div>', unsafe_allow_html=True)
-            gym_name = st.text_input("Gym Name", placeholder="Example: Iron Pulse Fitness")
-            audience = st.text_input(
-                "Target Audience",
-                placeholder="Example: Working professionals aged 22-40",
-            )
-            city = st.selectbox("City", options=TELANGANA_LOCATIONS, index=0)
-            content_target = st.selectbox(
-                "Content Target",
-                options=list(TARGET_CONTENT.keys()),
-                format_func=lambda t: t.replace("_", " ").title(),
-            )
-            tone = st.selectbox(
-                "Tone",
-                options=["Motivational", "Friendly", "Professional", "Energetic"],
-            )
-            region_focus = st.selectbox(
-                "Location Focus",
-                options=["Hyderabad", "Telangana", "Hyderabad + Telangana"],
-                index=2,
-            )
-            submitted = st.form_submit_button(
-                "Generate Next Post",
-                use_container_width=True,
-            )
+    with signup_tab:
+        signup_email = st.text_input("Email", key="signup_email")
+        signup_password = st.text_input("Password", type="password", key="signup_password")
+        if st.button("Create Account", use_container_width=True):
+            try:
+                sign_up(signup_email, signup_password)
+                st.success("Account created. Please check verification email if enabled.")
+                st.rerun()
+            except Exception as exc:
+                st.error(_friendly_auth_error(exc))
 
-    with right_col:
-        st.markdown('<div class="section-title">Why This Works</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()
+
+
+def render_locked_industry() -> None:
+    """Show locked state for premium industries."""
+    st.warning("Upgrade to Pro to access this industry 🚀")
+    st.button("Upgrade to Pro ₹999/month", use_container_width=True)
+    render_upgrade_page()
+
+
+def main() -> None:
+    load_dotenv()
+    st.set_page_config(
+        page_title="AI Marketing Assistant Platform",
+        page_icon="🚀",
+        layout="wide",
+    )
+    inject_platform_css()
+    st.session_state.setdefault("user", None)
+    st.session_state.setdefault("industry", "Gym")
+
+    ensure_supabase_secrets()
+    render_auth_page()
+
+    user = st.session_state.get("user")
+    user_email = user.email if user else ""
+    plan = get_user_plan(user_email)
+
+    st.markdown(
+        """
+        <div class="platform-hero">
+            <h1 style="margin:0;">AI Marketing Assistant Platform</h1>
+            <p style="margin:0.45rem 0 0 0;">Generate social media content for multiple industries.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    left_meta, right_meta = st.columns([4, 1])
+    with left_meta:
         st.markdown(
-            """
-            <div class="kpi-card"><strong>Local-first strategy</strong><br>
-            Content is tuned for Hyderabad/Telangana audience behavior.</div>
-            <div class="kpi-card"><strong>30 days instantly</strong><br>
-            Go from idea to monthly calendar in one click.</div>
-            <div class="kpi-card"><strong>Post-ready format</strong><br>
-            Captions, image ideas, and hashtags included.</div>
+            f"""
+            <div class="top-nav">
+                <strong>Logged in:</strong> {user_email} &nbsp; | &nbsp;
+                <strong>Plan:</strong> {plan.title()}
+            </div>
             """,
             unsafe_allow_html=True,
         )
-        used_count, total_count = get_usage_progress(content_target)
-        st.info(f"Progress for {content_target.replace('_', ' ').title()}: {used_count}/{total_count} used")
-        if st.button("Reset This Target Sequence", use_container_width=True):
-            reset_target_usage(content_target)
-            st.success("Target sequence reset. Day 1 will be served on next click.")
+    with right_meta:
+        if st.button("Sign Out", use_container_width=True):
+            sign_out()
+            st.rerun()
 
-    if submitted:
-        error_message = validate_inputs(gym_name, city, audience)
-        if error_message:
-            st.error(error_message)
-            return
+    st.markdown(
+        f"""
+        <div class="plan-chip">
+            <strong>{plan.title()} Plan Active</strong><br>
+            Free: Gym only. Pro unlocks all industries.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    tab_gym, tab_re, tab_beauty, tab_pol = st.tabs(INDUSTRIES)
 
-        try:
-            with st.spinner("Fetching next post from your content bank..."):
-                post = get_next_post(content_target)
-                if post is None:
-                    st.warning(
-                        "All 10 posts are already used for this target. "
-                        "Click 'Reset This Target Sequence' to start again."
-                    )
-                    return
-                result = format_post_output(
-                    gym_name=gym_name,
-                    city=city,
-                    audience=audience,
-                    tone=tone,
-                    region_focus=region_focus,
-                    post=post,
-                )
-        except Exception as exc:  # Broad catch for robust MVP UX.
-            st.error(
-                "Something went wrong while loading the next post. "
-                "Please try again."
-            )
-            st.exception(exc)
-            return
+    with tab_gym:
+        st.session_state["industry"] = "Gym"
+        import modules.gym.ui as gym_ui
 
-        st.success("Next post is ready.")
+        gym_ui.render_module()
 
-        result_col, meta_col = st.columns([1.6, 1], gap="large")
-        with result_col:
-            st.subheader("Generated Post")
-            st.markdown(result)
-        with meta_col:
-            st.markdown("### Campaign Snapshot")
-            st.markdown(f"- **Gym:** {gym_name}")
-            st.markdown(f"- **City:** {city}")
-            st.markdown(f"- **Audience:** {audience}")
-            st.markdown(f"- **Target:** {content_target.replace('_', ' ').title()}")
-            st.markdown(f"- **Tone:** {tone}")
-            st.markdown(f"- **Focus:** {region_focus}")
-            used_count, total_count = get_usage_progress(content_target)
-            st.markdown(f"- **Used:** {used_count}/{total_count}")
+    with tab_re:
+        st.session_state["industry"] = "Real Estate"
+        if plan == "free":
+            render_locked_industry()
+        else:
+            import modules.real_estate.ui as re_ui
 
-        file_buffer = io.StringIO()
-        file_buffer.write(result)
-        file_name = (
-            f"{gym_name.strip().replace(' ', '_').lower()}_30_day_content_calendar.txt"
-        )
+            re_ui.render_module()
 
-        st.download_button(
-            label="Download as Text File",
-            data=file_buffer.getvalue(),
-            file_name=file_name,
-            mime="text/plain",
-        )
+    with tab_beauty:
+        st.session_state["industry"] = "Beauty"
+        if plan == "free":
+            render_locked_industry()
+        else:
+            import modules.beauty.ui as beauty_ui
+
+            beauty_ui.render_module()
+
+    with tab_pol:
+        st.session_state["industry"] = "Political Campaign"
+        if plan == "free":
+            render_locked_industry()
+        else:
+            import modules.politics.ui as politics_ui
+
+            politics_ui.render_module()
 
 
 if __name__ == "__main__":

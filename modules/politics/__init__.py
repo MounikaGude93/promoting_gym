@@ -1,0 +1,1 @@
+"""Political campaign module package."""
