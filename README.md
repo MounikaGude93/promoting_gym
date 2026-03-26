@@ -69,4 +69,7 @@ Open the local URL shown in your terminal (typically `http://localhost:8501`).
 - Content library lives in `content_bank.py`.
 - Usage tracking is persisted in `usage_state.json` (auto-created) via `content_store.py`.
 - You can re-enable OpenAI generation later without changing the UI flow.
+<<<<<<< HEAD
 # promoting_gym
+=======
+>>>>>>> 41ebf03 (Initial MVP release for gym social content app.)
