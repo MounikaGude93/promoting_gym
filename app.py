@@ -142,11 +142,15 @@ def render_auth_page() -> None:
     st.stop()
 
 
-def render_locked_industry() -> None:
+def render_locked_industry(key_suffix: str) -> None:
     """Show locked state for premium industries."""
     st.warning("Upgrade to Pro to access this industry 🚀")
-    st.button("Upgrade to Pro ₹999/month", use_container_width=True)
-    render_upgrade_page()
+    st.button(
+        "Upgrade to Pro ₹999/month",
+        use_container_width=True,
+        key=f"upgrade_cta_{key_suffix}",
+    )
+    render_upgrade_page(key_prefix=f"upgrade_{key_suffix}")
 
 
 def main() -> None:
@@ -213,7 +217,7 @@ def main() -> None:
     with tab_re:
         st.session_state["industry"] = "Real Estate"
         if plan == "free":
-            render_locked_industry()
+            render_locked_industry("real_estate")
         else:
             import modules.real_estate.ui as re_ui
 
@@ -222,7 +226,7 @@ def main() -> None:
     with tab_beauty:
         st.session_state["industry"] = "Beauty"
         if plan == "free":
-            render_locked_industry()
+            render_locked_industry("beauty")
         else:
             import modules.beauty.ui as beauty_ui
 
@@ -231,7 +235,7 @@ def main() -> None:
     with tab_pol:
         st.session_state["industry"] = "Political Campaign"
         if plan == "free":
-            render_locked_industry()
+            render_locked_industry("politics")
         else:
             import modules.politics.ui as politics_ui
 
